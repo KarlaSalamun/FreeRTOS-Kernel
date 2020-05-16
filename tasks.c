@@ -2884,9 +2884,6 @@ BaseType_t xSwitchRequired = pdFALSE;
 					at which the task at the head of the delayed list must
 					be removed from the Blocked state. */
 					pxTCB = listGET_OWNER_OF_HEAD_ENTRY( pxDelayedTaskList ); /*lint !e9079 void * is used as this macro is used with timers and co-routines too.  Alignment is known to be fine as the type of the pointer stored and retrieved is the same. */
-					#if( configUSE_EDF_SCHEDULER == 1 ) 
-						listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), (pxTCB)->xTaskPeriod + xTaskGetTickCount() );
-					#endif
 					xItemValue = listGET_LIST_ITEM_VALUE( &( pxTCB->xStateListItem ) );
 
 					if( xConstTickCount < xItemValue )
@@ -2896,6 +2893,7 @@ BaseType_t xSwitchRequired = pdFALSE;
 						of the blocked list must be removed from the Blocked
 						state -	so record the item value in
 						xNextTaskUnblockTime. */
+						
 						xNextTaskUnblockTime = xItemValue;
 						break; /*lint !e9011 Code structure here is deedmed easier to understand with multiple breaks. */
 					}
@@ -2918,15 +2916,10 @@ BaseType_t xSwitchRequired = pdFALSE;
 						mtCOVERAGE_TEST_MARKER();
 					}
 
-					#if( configUSE_EDF_SCHEDULER == 1 )
-						if( listGET_LIST_ITEM_VALUE(&((pxTCB)->xStateListItem)) <= listGET_LIST_ITEM_VALUE(&((pxCurrentTCB)->xStateListItem)) )
-						{
-							xSwitchRequired = pdTRUE;
-						}
-						else 
-						{
-							mtCOVERAGE_TEST_MARKER();
-						}
+
+
+					#if( configUSE_EDF_SCHEDULER == 1 ) 
+						listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), (pxTCB)->xTaskPeriod + xTaskGetTickCount() );
 					#endif
 
 					/* Place the unblocked task into the appropriate ready
@@ -2951,6 +2944,17 @@ BaseType_t xSwitchRequired = pdFALSE;
 						}
 					}
 					#endif /* configUSE_PREEMPTION */
+
+					#if( configUSE_EDF_SCHEDULER == 1 )
+						if( listGET_LIST_ITEM_VALUE(&((pxTCB)->xStateListItem)) <= listGET_LIST_ITEM_VALUE(&((pxCurrentTCB)->xStateListItem)) )
+						{
+							xSwitchRequired = pdTRUE;
+						}
+						else 
+						{
+							mtCOVERAGE_TEST_MARKER();
+						}
+					#endif
 				}
 			}
 		}
