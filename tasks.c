@@ -219,8 +219,8 @@ count overflows. */
 
 #define vTaskComputePriority( pxTCB )																\
 {																									\
-	pxTCB->xPriorityValue = pxTCB->xDueDate + pxTCB->xTaskDuration + max( pxTCB->xDueDate - pxTCB->xTaskDuration, 0 );	\
-}																									\
+	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration != 0 ) ? ( pxTCB->xDueDate + pxTCB->xTaskDuration + max( pxTCB->xDueDate - pxTCB->xTaskDuration, 0 )) : 1000; \
+}																									
 
 /*
  * Place the task represented by pxTCB into the appropriate ready list for
@@ -233,6 +233,7 @@ count overflows. */
 		vTaskComputePriority( pxTCB );																\
 		listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), (pxTCB)->xPriorityValue );				\
 		vListInsert( &(xReadyTasksListGP), &((pxTCB)->xStateListItem) );							\
+		traceMOVED_TASK_TO_READY_STATE( pxTCB );													\
 	}
 #elif ( configUSE_EDF_SCHEDULER == 1 )																
 	#define prvAddTaskToReadyList( pxTCB )															\
@@ -383,7 +384,6 @@ typedef struct tskTaskControlBlock 			/* The old naming convention is used to pr
 		TickType_t xDueDate;
 		uint32_t uTaskWeight;
 		double xPriorityValue;
-		double xInitPriorityValue;
 	#endif
 
 } tskTCB;
@@ -1061,7 +1061,7 @@ static void prvAddNewTaskToReadyList( TCB_t *pxNewTCB ) PRIVILEGED_FUNCTION;
 			pxNewTCB->xTaskDuration = duration;
 			pxNewTCB->uTaskWeight = weight;
 			pxNewTCB->xDueDate = period;
-			pxNewTCB->xInitPriorityValue = init_priority;
+			pxNewTCB->xPriorityValue = init_priority;
 			vTaskComputePriority( pxNewTCB );
 			#if( tskSTATIC_AND_DYNAMIC_ALLOCATION_POSSIBLE != 0 ) /*lint !e9029 !e731 Macro has been consolidated for readability reasons. */
 			{
