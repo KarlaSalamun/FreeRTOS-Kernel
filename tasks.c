@@ -215,7 +215,7 @@ count overflows. */
 
 #define vTaskComputePriority( pxTCB )																\
 {								\
-	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( (double)pxTCB->xDueDate / pxTCB->xTaskWeight ) : 1000;    \
+	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? pxTCB->xDueDate : 1000;    \
 }																									
 
 /*
@@ -3030,6 +3030,22 @@ BaseType_t xSwitchRequired = pdFALSE;
 		#if( configUSE_GP_SCHEDULER == 1 )
 		{
 			pxCurrentTCB->xRemainingTicks--;
+			if( pxCurrentTCB->xRemainingTicks == 0 )
+			{
+				if( pxCurrentTCB->xDueDate < xTickCount )
+				{
+					xTardiness += xTickCount - pxCurrentTCB->xDueDate;
+				}
+				pxCurrentTCB->xRemainingTicks = pxCurrentTCB->xTaskDuration;
+				pxCurrentTCB->xDueDate += pxCurrentTCB->xTaskPeriod;
+			}
+			// vTaskComputePriority( pxCurrentTCB );
+			// listSET_LIST_ITEM_VALUE( &((pxCurrentTCB)->xStateListItem), pxCurrentTCB->xPriorityValue );
+
+			// vTaskComputePriority( pxCurrentTCB );
+			// uxListRemove( &(pxCurrentTCB->xStateListItem) );
+			// listSET_LIST_ITEM_VALUE( &((pxCurrentTCB)->xStateListItem), pxCurrentTCB->xPriorityValue );
+			// prvAddTaskToReadyList( pxCurrentTCB );
 
 			configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
 			listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
@@ -3037,6 +3053,9 @@ BaseType_t xSwitchRequired = pdFALSE;
 			{
 				listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) );
 				vTaskComputePriority( pxNextTCB );
+				uxListRemove( &( pxNextTCB->xStateListItem ) );
+				listSET_LIST_ITEM_VALUE( &((pxNextTCB)->xStateListItem), pxNextTCB->xPriorityValue );
+				prvAddTaskToReadyList( pxNextTCB );
 			} while( pxNextTCB != pxFirstTCB );
 
 			// if( listLIST_IS_EMPTY( pxDelayedTaskList ) != pdFALSE )
@@ -3137,8 +3156,8 @@ BaseType_t xSwitchRequired = pdFALSE;
 						// (pxTCB)->xDueDate = xTaskGetTickCount() + pxTCB->xTaskPeriod;
 						vTaskComputePriority( pxTCB );
 						listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), pxTCB->xPriorityValue );
-						// vTaskComputePriority( pxCurrentTCB );
-						// listSET_LIST_ITEM_VALUE( &((pxCurrentTCB)->xStateListItem), pxCurrentTCB->xPriorityValue );
+						vTaskComputePriority( pxCurrentTCB );
+						listSET_LIST_ITEM_VALUE( &((pxCurrentTCB)->xStateListItem), pxCurrentTCB->xPriorityValue );
 					}
 					#endif
 
@@ -3233,6 +3252,16 @@ BaseType_t xSwitchRequired = pdFALSE;
 			}
 		}
 		#endif /* configUSE_PREEMPTION */
+
+		#if( configUSE_GP_SCHEDULER == 1 )
+		{
+			pxTCB = listGET_OWNER_OF_HEAD_ENTRY( &xReadyTasksListGP );
+			if( pxTCB->xPriorityValue < pxCurrentTCB->xPriorityValue )
+			{
+				xSwitchRequired = pdTRUE;
+			}
+		}
+		#endif
 	}
 	else
 	{
@@ -3371,19 +3400,6 @@ void vTaskSwitchContext( void )
 	}
 	else
 	{
-		#if( configUSE_GP_SCHEDULER == 1 )
-		{
-			if( pxCurrentTCB->xRemainingTicks == 0 ) 
-			{
-				if( pxCurrentTCB->xDueDate < xTickCount )
-				{
-					xTardiness += xTickCount - pxCurrentTCB->xDueDate;
-				}
-				pxCurrentTCB->xRemainingTicks = pxCurrentTCB->xTaskDuration;
-				pxCurrentTCB->xDueDate += pxCurrentTCB->xTaskPeriod;
-			}
-		}
-		#endif
 
 		xYieldPending = pdFALSE;
 		traceTASK_SWITCHED_OUT();
