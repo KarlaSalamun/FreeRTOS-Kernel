@@ -354,7 +354,7 @@ is used in assert() statements. */
 						TaskHandle_t * const pxCreatedTask,
 						TickType_t period,
 						TickType_t duration,
-						uint32_t weight,
+						double weight,
 						double init_priority ) PRIVILEGED_FUNCTION;
 #endif
 

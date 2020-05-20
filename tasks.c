@@ -211,15 +211,11 @@ count overflows. */
 
 /*-----------------------------------------------------------*/
 
-#define max( a, b ) ({																\
-	__typeof__ (a) _a = (a);														\
-	__typeof__ (b) _b = (b);														\
-	_a > _b ? _a : _b;																\
-	 })
+#define max( a, b ) ( (a) > (b) ? (a) : (b) )
 
 #define vTaskComputePriority( pxTCB )																\
-{																									\
-	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration != 0 ) ? ( pxTCB->xDueDate + pxTCB->xTaskDuration + max( pxTCB->xDueDate - pxTCB->xTaskDuration, 0 )) : 1000; \
+{								\
+	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( (double)pxTCB->xDueDate / pxTCB->xTaskWeight ) : 1000;    \
 }																									
 
 /*
@@ -382,7 +378,8 @@ typedef struct tskTaskControlBlock 			/* The old naming convention is used to pr
 		TickType_t xTaskPeriod;
 		TickType_t xTaskDuration;
 		TickType_t xDueDate;
-		uint32_t uTaskWeight;
+		TickType_t xRemainingTicks;
+		double xTaskWeight;
 		double xPriorityValue;
 	#endif
 
@@ -446,6 +443,8 @@ PRIVILEGED_DATA static UBaseType_t uxTaskNumber 					= ( UBaseType_t ) 0U;
 PRIVILEGED_DATA static volatile TickType_t xNextTaskUnblockTime		= ( TickType_t ) 0U; /* Initialised to portMAX_DELAY before the scheduler starts. */
 PRIVILEGED_DATA static TaskHandle_t xIdleTaskHandle					= NULL;			/*< Holds the handle of the idle task.  The idle task is created automatically when the scheduler is started. */
 
+PRIVILEGED_DATA volatile double xTardiness							= 0;
+
 /* Context switches are held pending while the scheduler is suspended.  Also,
 interrupts must not manipulate the xStateListItem of a TCB, or any of the
 lists the xStateListItem can be referenced from, if the scheduler is suspended.
@@ -463,6 +462,10 @@ PRIVILEGED_DATA static volatile UBaseType_t uxSchedulerSuspended	= ( UBaseType_t
 	PRIVILEGED_DATA static uint32_t ulTaskSwitchedInTime = 0UL;	/*< Holds the value of a timer/counter the last time a task was switched in. */
 	PRIVILEGED_DATA static uint32_t ulTotalRunTime = 0UL;		/*< Holds the total amount of execution time as defined by the run time counter clock. */
 
+#endif
+
+#if( configTRACE_TARDINESS == 1 )
+	double xTotalWeightedTard = 0;
 #endif
 
 /*lint -restore */
@@ -993,7 +996,7 @@ static void prvAddNewTaskToReadyList( TCB_t *pxNewTCB ) PRIVILEGED_FUNCTION;
 							TaskHandle_t * const pxCreatedTask,
 							TickType_t period,
 							TickType_t duration,
-							uint32_t weight,
+							double weight,
 							double init_priority )
 	{
 	TCB_t *pxNewTCB;
@@ -1059,9 +1062,10 @@ static void prvAddNewTaskToReadyList( TCB_t *pxNewTCB ) PRIVILEGED_FUNCTION;
 		{
 			pxNewTCB->xTaskPeriod = period;
 			pxNewTCB->xTaskDuration = duration;
-			pxNewTCB->uTaskWeight = weight;
+			pxNewTCB->xTaskWeight = weight;
 			pxNewTCB->xDueDate = period;
 			pxNewTCB->xPriorityValue = init_priority;
+			pxNewTCB->xRemainingTicks = duration;
 			vTaskComputePriority( pxNewTCB );
 			#if( tskSTATIC_AND_DYNAMIC_ALLOCATION_POSSIBLE != 0 ) /*lint !e9029 !e731 Macro has been consolidated for readability reasons. */
 			{
@@ -1372,14 +1376,25 @@ static void prvAddNewTaskToReadyList( TCB_t *pxNewTCB )
 			so far. */
 			if( xSchedulerRunning == pdFALSE )
 			{
-				if( pxCurrentTCB->uxPriority <= pxNewTCB->uxPriority )
+				#if( configUSE_GP_SCHEDULER == 1 )
 				{
-					pxCurrentTCB = pxNewTCB;
+					if( pxCurrentTCB->xPriorityValue > pxNewTCB->xPriorityValue )
+					{
+						pxCurrentTCB = pxNewTCB;
+					}
 				}
-				else
+				#else
 				{
-					mtCOVERAGE_TEST_MARKER();
+					if( pxCurrentTCB->uxPriority <= pxNewTCB->uxPriority )
+					{
+						pxCurrentTCB = pxNewTCB;
+					}
+					else
+					{
+						mtCOVERAGE_TEST_MARKER();
+					}
 				}
+				#endif
 			}
 			else
 			{
@@ -3009,8 +3024,35 @@ BaseType_t xSwitchRequired = pdFALSE;
 	Increments the tick then checks to see if the new tick value will cause any
 	tasks to be unblocked. */
 	traceTASK_INCREMENT_TICK( xTickCount );
+
 	if( uxSchedulerSuspended == ( UBaseType_t ) pdFALSE )
 	{
+		#if( configUSE_GP_SCHEDULER == 1 )
+		{
+			pxCurrentTCB->xRemainingTicks--;
+
+			configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
+			listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
+			do 
+			{
+				listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) );
+				vTaskComputePriority( pxNextTCB );
+			} while( pxNextTCB != pxFirstTCB );
+
+			// if( listLIST_IS_EMPTY( pxDelayedTaskList ) != pdFALSE )
+			// {
+			// 	listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, pxDelayedTaskList );
+			// 	do 
+			// 	{
+			// 		listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, pxDelayedTaskList );
+			// 		if( pxNextTCB->xTaskDuration > 0 && pxNextTCB->xDueDate <= xTickCount )
+			// 		{
+			// 			pxNextTCB->xDueDate += pxNextTCB->xTaskPeriod;
+			// 		}
+			// 	} while( pxNextTCB != pxFirstTCB );
+			// }
+		}
+		#endif
 		/* Minor optimisation.  The tick count cannot change in this
 		block. */
 		const TickType_t xConstTickCount = xTickCount + ( TickType_t ) 1;
@@ -3092,9 +3134,11 @@ BaseType_t xSwitchRequired = pdFALSE;
 
 					#if( configUSE_GP_SCHEDULER == 1 )
 					{
-						(pxTCB)->xDueDate = xTaskGetTickCount() + pxTCB->xTaskPeriod;
+						// (pxTCB)->xDueDate = xTaskGetTickCount() + pxTCB->xTaskPeriod;
 						vTaskComputePriority( pxTCB );
 						listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), pxTCB->xPriorityValue );
+						// vTaskComputePriority( pxCurrentTCB );
+						// listSET_LIST_ITEM_VALUE( &((pxCurrentTCB)->xStateListItem), pxCurrentTCB->xPriorityValue );
 					}
 					#endif
 
@@ -3327,6 +3371,20 @@ void vTaskSwitchContext( void )
 	}
 	else
 	{
+		#if( configUSE_GP_SCHEDULER == 1 )
+		{
+			if( pxCurrentTCB->xRemainingTicks == 0 ) 
+			{
+				if( pxCurrentTCB->xDueDate < xTickCount )
+				{
+					xTardiness += xTickCount - pxCurrentTCB->xDueDate;
+				}
+				pxCurrentTCB->xRemainingTicks = pxCurrentTCB->xTaskDuration;
+				pxCurrentTCB->xDueDate += pxCurrentTCB->xTaskPeriod;
+			}
+		}
+		#endif
+
 		xYieldPending = pdFALSE;
 		traceTASK_SWITCHED_OUT();
 
