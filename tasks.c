@@ -215,7 +215,7 @@ count overflows. */
 
 #define vTaskComputePriority( pxTCB )																\
 {								\
-	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? pxTCB->xDueDate : 1000;    \
+	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( pxTCB->xTaskDuration + pxTCB->xDueDate ) : 1000;    \
 }																									
 
 /*
@@ -3025,56 +3025,57 @@ BaseType_t xSwitchRequired = pdFALSE;
 	tasks to be unblocked. */
 	traceTASK_INCREMENT_TICK( xTickCount );
 
-	if( uxSchedulerSuspended == ( UBaseType_t ) pdFALSE )
-	{
-		#if( configUSE_GP_SCHEDULER == 1 )
-		{
-			pxCurrentTCB->xRemainingTicks--;
-			if( pxCurrentTCB->xRemainingTicks == 0 )
-			{
-				if( pxCurrentTCB->xDueDate < xTickCount )
-				{
-					xTardiness += xTickCount - pxCurrentTCB->xDueDate;
-				}
-				pxCurrentTCB->xRemainingTicks = pxCurrentTCB->xTaskDuration;
-				pxCurrentTCB->xDueDate += pxCurrentTCB->xTaskPeriod;
-			}
-			// vTaskComputePriority( pxCurrentTCB );
-			// listSET_LIST_ITEM_VALUE( &((pxCurrentTCB)->xStateListItem), pxCurrentTCB->xPriorityValue );
-
-			// vTaskComputePriority( pxCurrentTCB );
-			// uxListRemove( &(pxCurrentTCB->xStateListItem) );
-			// listSET_LIST_ITEM_VALUE( &((pxCurrentTCB)->xStateListItem), pxCurrentTCB->xPriorityValue );
-			// prvAddTaskToReadyList( pxCurrentTCB );
-
-			configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
-			listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
-			do 
-			{
-				listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) );
-				vTaskComputePriority( pxNextTCB );
-				uxListRemove( &( pxNextTCB->xStateListItem ) );
-				listSET_LIST_ITEM_VALUE( &((pxNextTCB)->xStateListItem), pxNextTCB->xPriorityValue );
-				prvAddTaskToReadyList( pxNextTCB );
-			} while( pxNextTCB != pxFirstTCB );
-
-			// if( listLIST_IS_EMPTY( pxDelayedTaskList ) != pdFALSE )
-			// {
-			// 	listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, pxDelayedTaskList );
-			// 	do 
-			// 	{
-			// 		listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, pxDelayedTaskList );
-			// 		if( pxNextTCB->xTaskDuration > 0 && pxNextTCB->xDueDate <= xTickCount )
-			// 		{
-			// 			pxNextTCB->xDueDate += pxNextTCB->xTaskPeriod;
-			// 		}
-			// 	} while( pxNextTCB != pxFirstTCB );
-			// }
-		}
-		#endif
 		/* Minor optimisation.  The tick count cannot change in this
 		block. */
 		const TickType_t xConstTickCount = xTickCount + ( TickType_t ) 1;
+
+		if( uxSchedulerSuspended == ( UBaseType_t ) pdFALSE )
+		{
+			#if( configUSE_GP_SCHEDULER == 1 )
+			{
+
+				pxCurrentTCB->xRemainingTicks--;
+
+				configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
+				listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
+
+				if( pxCurrentTCB->xRemainingTicks == 0 ) 
+				{
+					if( pxCurrentTCB->xDueDate < xConstTickCount )
+					{
+						xTardiness += xConstTickCount - pxCurrentTCB->xDueDate;
+					}
+					pxCurrentTCB->xDueDate += pxCurrentTCB->xTaskPeriod;
+					vTaskComputePriority( pxCurrentTCB );
+					pxCurrentTCB->xRemainingTicks = pxCurrentTCB->xTaskDuration;
+				}
+
+				// configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
+				listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
+				do 
+				{
+					listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) ); // TODO ovo nije dobro
+					vTaskComputePriority( pxNextTCB );
+					uxListRemove( &( pxNextTCB->xStateListItem ) );
+					listSET_LIST_ITEM_VALUE( &((pxNextTCB)->xStateListItem), pxNextTCB->xPriorityValue );
+					prvAddTaskToReadyList( pxNextTCB );
+					listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) );
+				} while( pxNextTCB != pxFirstTCB );
+
+				// if( listLIST_IS_EMPTY( pxDelayedTaskList ) != pdFALSE )
+				// {
+				// 	listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, pxDelayedTaskList );
+				// 	do 
+				// 	{
+				// 		listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, pxDelayedTaskList );
+				// 		if( pxNextTCB->xTaskDuration > 0 && pxNextTCB->xDueDate <= xTickCount )
+				// 		{
+				// 			pxNextTCB->xDueDate += pxNextTCB->xTaskPeriod;
+				// 		}
+				// 	} while( pxNextTCB != pxFirstTCB );
+				// }
+			}
+			#endif
 
 		/* Increment the RTOS tick, switching the delayed and overflowed
 		delayed lists if it wraps to 0. */
@@ -3153,7 +3154,7 @@ BaseType_t xSwitchRequired = pdFALSE;
 
 					#if( configUSE_GP_SCHEDULER == 1 )
 					{
-						// (pxTCB)->xDueDate = xTaskGetTickCount() + pxTCB->xTaskPeriod;
+						(pxTCB)->xDueDate = xTaskGetTickCount() + pxTCB->xTaskPeriod;
 						vTaskComputePriority( pxTCB );
 						listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), pxTCB->xPriorityValue );
 						vTaskComputePriority( pxCurrentTCB );
@@ -3185,7 +3186,7 @@ BaseType_t xSwitchRequired = pdFALSE;
 					#endif /* configUSE_PREEMPTION */
 
 					#if( configUSE_EDF_SCHEDULER == 1 )
-						if( listGET_LIST_ITEM_VALUE(&((pxTCB)->xStateListItem)) <= listGET_LIST_ITEM_VALUE(&((pxCurrentTCB)->xStateListItem)) )
+						if( listGET_LIST_ITEM_VALUE(&((pxTCB)->xStateListItem)) < listGET_LIST_ITEM_VALUE(&((pxCurrentTCB)->xStateListItem)) )
 						{
 							xSwitchRequired = pdTRUE;
 						}
@@ -3202,6 +3203,7 @@ BaseType_t xSwitchRequired = pdFALSE;
 						}
 						else 
 						{
+							xSwitchRequired = pdFALSE;
 							mtCOVERAGE_TEST_MARKER();
 						}
 					#endif 
@@ -3240,18 +3242,18 @@ BaseType_t xSwitchRequired = pdFALSE;
 		}
 		#endif /* configUSE_TICK_HOOK */
 
-		#if ( configUSE_PREEMPTION == 1 )
-		{
-			if( xYieldPending != pdFALSE )
-			{
-				xSwitchRequired = pdTRUE;
-			}
-			else
-			{
-				mtCOVERAGE_TEST_MARKER();
-			}
-		}
-		#endif /* configUSE_PREEMPTION */
+		// #if ( configUSE_PREEMPTION == 1 )
+		// {
+		// 	if( xYieldPending != pdFALSE )
+		// 	{
+		// 		xSwitchRequired = pdTRUE;
+		// 	}
+		// 	else
+		// 	{
+		// 		mtCOVERAGE_TEST_MARKER();
+		// 	}
+		// }
+		// #endif /* configUSE_PREEMPTION */
 
 		#if( configUSE_GP_SCHEDULER == 1 )
 		{
@@ -3400,6 +3402,24 @@ void vTaskSwitchContext( void )
 	}
 	else
 	{
+		
+
+		// do 
+		// {
+		// 	listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) ); // TODO ovo nije dobro
+		// 	vTaskComputePriority( pxNextTCB );
+		// 	if( pxNextTCB->xPriorityValue == pxFirstTCB->xPriorityValue )
+		// 	{
+		// 		if( pxNextTCB->xRemainingTicks < pxNextTCB->xRemainingTicks )
+		// 		{
+		// 			pxNextTCB->xPriorityValue -= 1;
+		// 		}
+		// 	}
+		// 	uxListRemove( &( pxNextTCB->xStateListItem ) );
+		// 	listSET_LIST_ITEM_VALUE( &((pxNextTCB)->xStateListItem), pxNextTCB->xPriorityValue );
+		// 	prvAddTaskToReadyList( pxNextTCB );
+		// 	listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) );
+		// } while( pxNextTCB != pxFirstTCB );
 
 		xYieldPending = pdFALSE;
 		traceTASK_SWITCHED_OUT();
