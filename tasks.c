@@ -215,7 +215,7 @@ count overflows. */
 
 #define vTaskComputePriority( pxTCB )																\
 {								\
-	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( pxTCB->xTaskDuration + pxTCB->xDueDate ) : 1000;    \
+	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( pxTCB->xDueDate ) : 1000;    \
 }																									
 
 /*
@@ -236,34 +236,16 @@ count overflows. */
 	{																								\
 		vListInsert( &(xReadyTasksListEDF), &((pxTCB)->xStateListItem) );							\
 	}																								
-#else 																								
-	#define prvAddTaskToReadyList( pxTCB )															\
+#else																							
+	#define prvAddTaskToReadyList( pxTCB )                                                          \
 	{																								\
-		vListInsertEnd( &( pxReadyTasksLists[ ( pxTCB )->uxPriority ] ), &( ( pxTCB )->xStateListItem ) ); \
-	}
+		traceMOVED_TASK_TO_READY_STATE( pxTCB );       												\                                                      
+        taskRECORD_READY_PRIORITY( ( pxTCB )->uxPriority );   										\                                          
+        vListInsertEnd( &( pxReadyTasksLists[ ( pxTCB )->uxPriority ] ), &( ( pxTCB )->xStateListItem ) ); \ 
+       	tracePOST_MOVED_TASK_TO_READY_STATE( pxTCB );												\	
+	}																								
 #endif
-
-
-
-// #define prvAddTaskToReadyList( pxTCB )																\
-// ({																									\
-// 	traceMOVED_TASK_TO_READY_STATE( pxTCB );														\
-// 	taskRECORD_READY_PRIORITY( ( pxTCB )->uxPriority );												\
-// 	#if ( configUSE_EDF_SCHEDULER == 1 )															\
-// 	{																								\
-// 	}																								\
-// 	#if ( configUSE_GP_SCHEDULER == 1 )															\
-// 	{																								\
-// 		vTaskComputePriority( pxTCB );																\
-// 		listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), (pxTCB)->xPriorityValue );				\
-// 		vListInsert( &(xReadyTasksListGP), &((pxTCB)->xStateListItem) );							\
-// 	}																								\
-// 	#else 																							\
-// 	{																								\
-// 	}																								\
-// 	#endif																							\
-// 	tracePOST_MOVED_TASK_TO_READY_STATE( pxTCB );													\
-// })																									
+																								
 /*-----------------------------------------------------------*/
 
 /*
