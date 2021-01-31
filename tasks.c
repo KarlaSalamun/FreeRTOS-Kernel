@@ -213,11 +213,9 @@ count overflows. */
 
 #define max( a, b ) ( (a) > (b) ? (a) : (b) )
 
-#define pos_slack( pxTCB ) max( ((double)pxTCB->xDueDate - (double)pxTCB->xTaskDuration - (double)xTickCount), (0) )
-
 #define vTaskComputePriority( pxTCB )																\
 {								\
-	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? (double)pxTCB->xTaskDuration + (double)pxTCB->xDueDate : -1;    \
+	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( pxTCB->xTaskDuration + pxTCB->xDueDate ) : 1000;    \
 }																									
 
 /*
@@ -239,35 +237,15 @@ count overflows. */
 		vListInsert( &(xReadyTasksListEDF), &((pxTCB)->xStateListItem) );							\
 	}																								
 #else 																								
-	#define prvAddTaskToReadyList( pxTCB )															\
+	#define prvAddTaskToReadyList( pxTCB )                                                          \
 	{																								\
-		traceMOVED_TASK_TO_READY_STATE( pxTCB );														\
-		taskRECORD_READY_PRIORITY( ( pxTCB )->uxPriority );												\
-		vListInsertEnd( &( pxReadyTasksLists[ ( pxTCB )->uxPriority ] ), &( ( pxTCB )->xStateListItem ) ); \
+		traceMOVED_TASK_TO_READY_STATE( pxTCB );       												\                                                      
+        taskRECORD_READY_PRIORITY( ( pxTCB )->uxPriority );   										\                                          
+        vListInsertEnd( &( pxReadyTasksLists[ ( pxTCB )->uxPriority ] ), &( ( pxTCB )->xStateListItem ) ); \ 
+       	tracePOST_MOVED_TASK_TO_READY_STATE( pxTCB );												\	
 	}
 #endif
-
-
-
-// #define prvAddTaskToReadyList( pxTCB )																\
-// ({																									\
-// 	traceMOVED_TASK_TO_READY_STATE( pxTCB );														\
-// 	taskRECORD_READY_PRIORITY( ( pxTCB )->uxPriority );												\
-// 	#if ( configUSE_EDF_SCHEDULER == 1 )															\
-// 	{																								\
-// 	}																								\
-// 	#if ( configUSE_GP_SCHEDULER == 1 )															\
-// 	{																								\
-// 		vTaskComputePriority( pxTCB );																\
-// 		listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), (pxTCB)->xPriorityValue );				\
-// 		vListInsert( &(xReadyTasksListGP), &((pxTCB)->xStateListItem) );							\
-// 	}																								\
-// 	#else 																							\
-// 	{																								\
-// 	}																								\
-// 	#endif																							\
-// 	tracePOST_MOVED_TASK_TO_READY_STATE( pxTCB );													\
-// })																									
+																								
 /*-----------------------------------------------------------*/
 
 /*
@@ -448,7 +426,6 @@ PRIVILEGED_DATA static volatile TickType_t xNextTaskUnblockTime		= ( TickType_t 
 PRIVILEGED_DATA static TaskHandle_t xIdleTaskHandle					= NULL;			/*< Holds the handle of the idle task.  The idle task is created automatically when the scheduler is started. */
 
 PRIVILEGED_DATA volatile double xTardiness							= 0;
-PRIVILEGED_DATA volatile double xSum_DD								= 0;
 
 /* Context switches are held pending while the scheduler is suspended.  Also,
 interrupts must not manipulate the xStateListItem of a TCB, or any of the
@@ -1071,7 +1048,6 @@ static void prvAddNewTaskToReadyList( TCB_t *pxNewTCB ) PRIVILEGED_FUNCTION;
 			pxNewTCB->xDueDate = period;
 			pxNewTCB->xPriorityValue = init_priority;
 			pxNewTCB->xRemainingTicks = duration;
-			xSum_DD += pxNewTCB->xDueDate;
 			vTaskComputePriority( pxNewTCB );
 			#if( tskSTATIC_AND_DYNAMIC_ALLOCATION_POSSIBLE != 0 ) /*lint !e9029 !e731 Macro has been consolidated for readability reasons. */
 			{
@@ -3031,63 +3007,57 @@ BaseType_t xSwitchRequired = pdFALSE;
 	tasks to be unblocked. */
 	traceTASK_INCREMENT_TICK( xTickCount );
 
-	/* Minor optimisation.  The tick count cannot change in this
-	block. */
-	const TickType_t xConstTickCount = xTickCount + ( TickType_t ) 1;
+		/* Minor optimisation.  The tick count cannot change in this
+		block. */
+		const TickType_t xConstTickCount = xTickCount + ( TickType_t ) 1;
 
-	if( uxSchedulerSuspended == ( UBaseType_t ) pdFALSE )
-	{
-		#if( configUSE_GP_SCHEDULER == 1 )
+		if( uxSchedulerSuspended == ( UBaseType_t ) pdFALSE )
 		{
-			pxCurrentTCB->xRemainingTicks--;
-
-			configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
-			listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
-
-			if( pxCurrentTCB->xRemainingTicks == 0 ) 
+			#if( configUSE_GP_SCHEDULER == 1 )
 			{
-				if( pxCurrentTCB->xDueDate < xConstTickCount )
+
+				pxCurrentTCB->xRemainingTicks--;
+
+				configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
+				listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
+
+				if( pxCurrentTCB->xRemainingTicks == 0 ) 
 				{
-					xTardiness += xConstTickCount - pxCurrentTCB->xDueDate;
+					if( pxCurrentTCB->xDueDate < xConstTickCount )
+					{
+						xTardiness += xConstTickCount - pxCurrentTCB->xDueDate;
+					}
+					pxCurrentTCB->xDueDate += pxCurrentTCB->xTaskPeriod;
+					vTaskComputePriority( pxCurrentTCB );
+					pxCurrentTCB->xRemainingTicks = pxCurrentTCB->xTaskDuration;
 				}
-				pxCurrentTCB->xDueDate += pxCurrentTCB->xTaskPeriod;
-				pxCurrentTCB->xRemainingTicks = pxCurrentTCB->xTaskDuration;
+
+				// configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
+				listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
+				do 
+				{
+					listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) ); // TODO ovo nije dobro
+					vTaskComputePriority( pxNextTCB );
+					uxListRemove( &( pxNextTCB->xStateListItem ) );
+					listSET_LIST_ITEM_VALUE( &((pxNextTCB)->xStateListItem), pxNextTCB->xPriorityValue );
+					prvAddTaskToReadyList( pxNextTCB );
+					listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) );
+				} while( pxNextTCB != pxFirstTCB );
+
+				// if( listLIST_IS_EMPTY( pxDelayedTaskList ) != pdFALSE )
+				// {
+				// 	listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, pxDelayedTaskList );
+				// 	do 
+				// 	{
+				// 		listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, pxDelayedTaskList );
+				// 		if( pxNextTCB->xTaskDuration > 0 && pxNextTCB->xDueDate <= xTickCount )
+				// 		{
+				// 			pxNextTCB->xDueDate += pxNextTCB->xTaskPeriod;
+				// 		}
+				// 	} while( pxNextTCB != pxFirstTCB );
+				// }
 			}
-
-			xSum_DD = 0;
-			listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
-			do
-			{
-				listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) );
-				xSum_DD += pxNextTCB->xDueDate;
-			} while( pxNextTCB != pxFirstTCB );
-
-			// configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
-			listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
-			do
-			{
-				listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) ); // TODO ovo nije dobro
-				vTaskComputePriority( pxNextTCB );
-				uxListRemove( &( pxNextTCB->xStateListItem ) );
-				listSET_LIST_ITEM_VALUE( &((pxNextTCB)->xStateListItem), pxNextTCB->xPriorityValue );
-				prvAddTaskToReadyList( pxNextTCB );
-				listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, &(xReadyTasksListGP) );
-			} while( pxNextTCB != pxFirstTCB );
-
-			// if( listLIST_IS_EMPTY( pxDelayedTaskList ) != pdFALSE )
-			// {
-			// 	listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, pxDelayedTaskList );
-			// 	do 
-			// 	{
-			// 		listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, pxDelayedTaskList );
-			// 		if( pxNextTCB->xTaskDuration > 0 && pxNextTCB->xDueDate <= xTickCount )
-			// 		{
-			// 			pxNextTCB->xDueDate += pxNextTCB->xTaskPeriod;
-			// 		}
-			// 	} while( pxNextTCB != pxFirstTCB );
-			// }
-		}
-		#endif
+			#endif
 
 		/* Increment the RTOS tick, switching the delayed and overflowed
 		delayed lists if it wraps to 0. */
@@ -3167,7 +3137,6 @@ BaseType_t xSwitchRequired = pdFALSE;
 					#if( configUSE_GP_SCHEDULER == 1 )
 					{
 						(pxTCB)->xDueDate = xTaskGetTickCount() + pxTCB->xTaskPeriod;
-						xSum_DD += pxTCB->xDueDate;
 						vTaskComputePriority( pxTCB );
 						listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), pxTCB->xPriorityValue );
 						vTaskComputePriority( pxCurrentTCB );
@@ -3255,18 +3224,18 @@ BaseType_t xSwitchRequired = pdFALSE;
 		}
 		#endif /* configUSE_TICK_HOOK */
 
-		#if ( configUSE_PREEMPTION == 1 )
-		{
-			if( xYieldPending != pdFALSE )
-			{
-				xSwitchRequired = pdTRUE;
-			}
-			else
-			{
-				mtCOVERAGE_TEST_MARKER();
-			}
-		}
-		#endif /* configUSE_PREEMPTION */
+		// #if ( configUSE_PREEMPTION == 1 )
+		// {
+		// 	if( xYieldPending != pdFALSE )
+		// 	{
+		// 		xSwitchRequired = pdTRUE;
+		// 	}
+		// 	else
+		// 	{
+		// 		mtCOVERAGE_TEST_MARKER();
+		// 	}
+		// }
+		// #endif /* configUSE_PREEMPTION */
 
 		#if( configUSE_GP_SCHEDULER == 1 )
 		{
