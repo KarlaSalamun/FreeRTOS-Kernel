@@ -215,7 +215,7 @@ count overflows. */
 
 #define vTaskComputePriority( pxTCB )																\
 {								\
-	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( pxTCB->xTaskDuration + pxTCB->xDueDate ) : 1000;    \
+	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( pxTCB->xDueDate ) : 1000;    \
 }																									
 
 /*
@@ -3016,12 +3016,12 @@ BaseType_t xSwitchRequired = pdFALSE;
 			#if( configUSE_GP_SCHEDULER == 1 )
 			{
 
-				pxCurrentTCB->xRemainingTicks--;
 
 				configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
 				listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
 
-				if( pxCurrentTCB->xRemainingTicks == 0 ) 
+				pxCurrentTCB->xRemainingTicks--;
+				if( pxCurrentTCB->xRemainingTicks < 0 ) 
 				{
 					if( pxCurrentTCB->xDueDate < xConstTickCount )
 					{
@@ -3236,7 +3236,7 @@ BaseType_t xSwitchRequired = pdFALSE;
 		// 	}
 		// }
 		// #endif /* configUSE_PREEMPTION */
-
+		/*
 		#if( configUSE_GP_SCHEDULER == 1 )
 		{
 			pxTCB = listGET_OWNER_OF_HEAD_ENTRY( &xReadyTasksListGP );
@@ -3246,6 +3246,7 @@ BaseType_t xSwitchRequired = pdFALSE;
 			}
 		}
 		#endif
+		*/
 	}
 	else
 	{
