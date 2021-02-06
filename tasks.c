@@ -215,7 +215,7 @@ count overflows. */
 
 #define vTaskComputePriority( pxTCB )																\
 {								\
-	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( pxTCB->xDueDate ) : 1000;    \
+	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( pxTCB->xRemainingTicks / pxTCB->xTaskWeight ) : 1000;    \
 }																									
 
 /*
@@ -360,7 +360,7 @@ typedef struct tskTaskControlBlock 			/* The old naming convention is used to pr
 		TickType_t xTaskPeriod;
 		TickType_t xTaskDuration;
 		TickType_t xDueDate;
-		TickType_t xRemainingTicks;
+		int xRemainingTicks;
 		double xTaskWeight;
 		double xPriorityValue;
 	#endif
@@ -3021,15 +3021,15 @@ BaseType_t xSwitchRequired = pdFALSE;
 				listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, &(xReadyTasksListGP) );
 
 				pxCurrentTCB->xRemainingTicks--;
-				if( pxCurrentTCB->xRemainingTicks < 0 ) 
+				if( pxCurrentTCB->xRemainingTicks == 0 ) 
 				{
 					if( pxCurrentTCB->xDueDate < xConstTickCount )
 					{
 						xTardiness += xConstTickCount - pxCurrentTCB->xDueDate;
 					}
 					pxCurrentTCB->xDueDate += pxCurrentTCB->xTaskPeriod;
-					vTaskComputePriority( pxCurrentTCB );
 					pxCurrentTCB->xRemainingTicks = pxCurrentTCB->xTaskDuration;
+					vTaskComputePriority( pxCurrentTCB );
 				}
 
 				// configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
@@ -3137,6 +3137,7 @@ BaseType_t xSwitchRequired = pdFALSE;
 					#if( configUSE_GP_SCHEDULER == 1 )
 					{
 						(pxTCB)->xDueDate = xTaskGetTickCount() + pxTCB->xTaskPeriod;
+						(pxTCB)->xRemainingTicks = pxTCB->xTaskDuration;
 						vTaskComputePriority( pxTCB );
 						listSET_LIST_ITEM_VALUE( &((pxTCB)->xStateListItem), pxTCB->xPriorityValue );
 						vTaskComputePriority( pxCurrentTCB );
