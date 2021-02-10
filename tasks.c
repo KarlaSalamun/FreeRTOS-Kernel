@@ -213,10 +213,15 @@ count overflows. */
 
 #define max( a, b ) ( (a) > (b) ? (a) : (b) )
 
+// #define vTaskComputePriority( pxTCB )																\
+// {								\
+// 	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( (pxTCB->xDueDate > xTickCount + pxTCB->xRemainingTicks) ? (pxTCB->xDueDate - xTickCount - pxTCB->xRemainingTicks) : 0 ) : 1000;    \
+// }	
+
 #define vTaskComputePriority( pxTCB )																\
 {								\
-	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? ( pxTCB->xRemainingTicks / pxTCB->xTaskWeight ) : 1000;    \
-}																									
+	pxTCB->xPriorityValue = ( pxTCB->xTaskDuration > 0 ) ? (pxTCB->xRemainingTicks / pxTCB->xTaskWeight)  : 1000;    \
+}
 
 /*
  * Place the task represented by pxTCB into the appropriate ready list for
